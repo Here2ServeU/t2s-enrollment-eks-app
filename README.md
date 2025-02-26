@@ -264,14 +264,73 @@ kubectl apply -f k8s/
 
 ---
 
-## Key Enhancements
+## How to Verify the T2S Enrollment Application
 
-✔ Modularized Terraform setup
-✔ S3 backend for state file storage
-✔ CI/CD pipelines for GitHub Actions, GitLab CI/CD, and Jenkins
-✔ Docker images stored in AWS ECR
-✔ EKS Deployment with Kubernetes manifests
-✔ Datadog monitoring for observability 
+### 1. Verify Locally (Before Deployment)
+- Run the frontend (React: npm start, Angular: ng serve --open) and access:
+```plaintext
+http://localhost:3000 (React)
+http://localhost:4200 (Angular)
+```
+
+- Start the backend (node server.js) and test API at:
+```plaintext
+http://localhost:5000/api/enroll
+```
+
+### 2. Verify on AWS EKS (After Deployment)
+- Check Kubernetes pods and services:
+```bash
+kubectl get pods -n t2s-enrollment
+kubectl get svc -n t2s-enrollment
+```
+
+- Access the app via:
+```plaintext
+http://<LoadBalancer-EXTERNAL-IP>
+https://t2s-enroll.com (if domain configured)
+```
+
+### 3. Verify Observability with Datadog
+- Monitor Kubernetes metrics in Datadog Dashboard
+- Check logs:
+```bash 
+kubectl logs <pod-name> -n t2s-enrollment
+```
+
+- Validate CI/CD pipeline status (GitHub Actions, GitLab, Jenkins).
+
+### 4. Test API Endpoints
+- GET all enrollments:
+```bash
+GET http://<LoadBalancer-EXTERNAL-IP>/api/enroll
+```
+
+	•	POST new enrollment:
+
+{
+  "firstName": "John",
+  "lastName": "Doe",
+  "email": "john@example.com",
+  "course": "DevOps"
+}
+
+
+
+5. Debug Issues (If Not Working)
+	•	Check logs:
+
+kubectl logs <pod-name> -n t2s-enrollment
+
+
+	•	Validate DNS & TLS:
+
+nslookup t2s-enroll.com
+curl -v https://t2s-enroll.com
+
+
+
+Once verified, your application should be fully accessible in the browser via LoadBalancer IP or custom domain! 🚀
 
 ---
 
