@@ -1,0 +1,14 @@
+stages:
+  - build
+  - deploy
+
+build:
+  stage: build
+  script:
+    - docker build -t $CI_REGISTRY_IMAGE/backend-nodejs:$CI_COMMIT_SHA .
+    - docker push $CI_REGISTRY_IMAGE/backend-nodejs:$CI_COMMIT_SHA
+
+deploy:
+  stage: deploy
+  script:
+    - kubectl set image deployment/backend-nodejs backend-nodejs=$CI_REGISTRY_IMAGE/backend-nodejs:$CI_COMMIT_SHA
