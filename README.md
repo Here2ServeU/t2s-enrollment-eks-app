@@ -1,47 +1,32 @@
-# T2S Enrollment Web Application Deployment on AWS EKS with CI/CD and Observability
+# T2S Enrollment Web Application – AWS EKS Infrastructure Deployment
+
+This project sets up a **production-grade, fully automated infrastructure** for the T2S Enrollment Web Application using:
+
+- **AWS EKS** for Kubernetes
+- **Terraform** modules for Infrastructure as Code
+- **GitHub Actions / GitLab CI / Jenkins** for CI/CD
+- **Datadog** for observability
+- **WAF, IAM, and HPA** for security and resilience
 
 ---
-The **T2S Enrollment Web Applicatio**n is a **fully automated cloud-native solution** designed to facilitate seamless user enrollment in training programs. This project leverages **AWS EKS (Elastic Kubernetes Service), Terraform for infrastructure as code, GitHub Actions, GitLab CI/CD, and Jenkins for automated deployments**, and **Datadog for monitoring and observability**.
 
-By integrating **React (frontend), Node.js (backend), and Nginx (reverse proxy)**, the application provides a **highly available, scalable, and cost-efficient** solution that follows modern **DevOps best practices**. This system not only ensures a **smooth and secure enrollment process** but also empowers DevOps engineers and cloud professionals with hands-on experience in **orchestrating a complete infrastructure deployment pipeline**.
+## 📁 Project Structure
 
----
-## Project Structure
 ```plaintext
 t2s-enrollment-app/
 │── terraform/
 │   ├── modules/
 │   │   ├── vpc/
-│   │   │   ├── main.tf
-│   │   │   ├── variables.tf
-│   │   │   ├── outputs.tf
 │   │   ├── eks/
-│   │   │   ├── main.tf
-│   │   │   ├── variables.tf
-│   │   │   ├── outputs.tf
 │   │   ├── s3-backend/
-│   │   │   ├── main.tf
-│   │   │   ├── variables.tf
-│   │   │   ├── outputs.tf
 │   │   ├── ecr/
-│   │   │   ├── main.tf
-│   │   │   ├── variables.tf
-│   │   │   ├── outputs.tf
 │   │   ├── cicd/
-│   │   │   ├── main.tf
-│   │   │   ├── variables.tf
-│   │   │   ├── outputs.tf
+│   │   ├── security/
+│   │   ├── monitoring/
+│   │   ├── resilience/
 │   ├── environments/
 │   │   ├── dev/
-│   │   │   ├── main.tf
-│   │   │   ├── variables.tf
-│   │   │   ├── terraform.tfvars
-│   │   │   ├── backend.tf
 │   │   ├── prod/
-│   │   │   ├── main.tf
-│   │   │   ├── variables.tf
-│   │   │   ├── terraform.tfvars
-│   │   │   ├── backend.tf
 │
 │── k8s/
 │   ├── frontend.yaml
@@ -51,319 +36,165 @@ t2s-enrollment-app/
 │── frontend-react/
 │   ├── Dockerfile
 │   ├── .github/workflows/deploy.yml
-│   ├── .gitlab-ci.yml
-│   ├── Jenkinsfile
 │
 │── backend-nodejs/
 │   ├── Dockerfile
 │   ├── .github/workflows/deploy.yml
-│   ├── .gitlab-ci.yml
-│   ├── Jenkinsfile
-│
-│── nginx/
-│   ├── nginx.conf
-│
-│── README.md
 ```
 
 ---
 
-## Terraform Modules
+## Terraform Module Responsibilities
 
-### 1. S3 Backend Module (State File Storage)
+| Module        | Description                                       |
+|---------------|---------------------------------------------------|
+| `vpc`         | Creates VPC and subnets                           |
+| `eks`         | Provisions EKS cluster                            |
+| `s3-backend`  | Manages Terraform backend (S3 + DynamoDB)         |
+| `ecr`         | Creates frontend/backend Docker registries        |
+| `cicd`        | Sets up IAM roles for CI/CD tools                 |
+| `security`    | Configures WAF and IAM roles                      |
+| `monitoring`  | Deploys Datadog agent using Helm                  |
+| `resilience`  | Adds HPA for frontend and backend apps            |
 
-#### Creating File: terraform/modules/s3-backend/main.tf
+---
+
+## How to Deploy
+
+### Step 1: Configure Remote Backend
+
+Update `backend.tf` in `terraform/environments/dev/`:
+
 ```hcl
-resource "aws_s3_bucket" "terraform_state" {
-  bucket = var.s3_bucket_name
-  acl    = "private"
-
-  versioning {
-    enabled = true
-  }
-
-  lifecycle {
-    prevent_destroy = true
-  }
-
-  tags = {
-    Name = "Terraform State Bucket"
-  }
-}
-
-resource "aws_dynamodb_table" "terraform_locks" {
-  name         = var.dynamodb_table_name
-  billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "LockID"
-
-  attribute {
-    name = "LockID"
-    type = "S"
+terraform {
+  backend "s3" {
+    bucket         = "t2s-enrollment-tf-state"
+    key            = "dev/terraform.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "t2s-enrollment-tf-lock"
   }
 }
 ```
 
-#### Creating File: terraform/modules/s3-backend/variables.tf
-```hcl
-variable "s3_bucket_name" {
-  description = "S3 bucket name for Terraform state"
-}
-
-variable "dynamodb_table_name" {
-  description = "DynamoDB table name for state locking"
-}
-```
-
-### 2. ECR Module (Store Docker Images)
-
-#### Creating File: terraform/modules/ecr/main.tf
-```hcl
-resource "aws_ecr_repository" "frontend_repo" {
-  name = var.frontend_repo
-}
-
-resource "aws_ecr_repository" "backend_repo" {
-  name = var.backend_repo
-}
-```
-
-#### File: terraform/modules/ecr/variables.tf
-```hcl
-variable "frontend_repo" {
-  description = "Name of the ECR repository for the frontend"
-}
-
-variable "backend_repo" {
-  description = "Name of the ECR repository for the backend"
-}
-```
-
-### 3. CI/CD Module (IAM and Pipeline Configurations)
-
-Creating File: terraform/modules/cicd/main.tf
-```hcl
-resource "aws_iam_role" "cicd_role" {
-  name = "cicd-role"
-  assume_role_policy = jsonencode({
-    Statement = [{
-      Effect = "Allow"
-      Principal = {
-        Service = "codebuild.amazonaws.com"
-      }
-      Action = "sts:AssumeRole"
-    }]
-  })
-}
-```
-
 ---
 
-## CI/CD Pipelines
+### Step 2: Initialize & Apply Terraform
 
-### GitHub Actions
-
-#### Creating File: .github/workflows/deploy.yml
-```yml
-name: Deploy to AWS EKS
-
-on:
-  push:
-    branches:
-      - main
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v2
-
-      - name: Login to AWS ECR
-        run: |
-          aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin <AWS_ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com
-
-      - name: Build and Push Docker Image
-        run: |
-          docker build -t t2s-frontend .
-          docker tag t2s-frontend:latest <AWS_ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/t2s-frontend:latest
-          docker push <AWS_ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/t2s-frontend:latest
-
-      - name: Deploy to EKS
-        run: |
-          kubectl apply -f k8s/frontend.yaml
-```
-
-### Frontend (React) Kubernetes Deployment
-
-#### Creating File: k8s/frontend.yaml
-```hcl
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: frontend
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: frontend
-  template:
-    metadata:
-      labels:
-        app: frontend
-    spec:
-      containers:
-      - name: frontend
-        image: <AWS_ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/t2s-frontend:latest
-        ports:
-        - containerPort: 80
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: frontend-service
-spec:
-  selector:
-    app: frontend
-  ports:
-    - protocol: TCP
-      port: 80
-      targetPort: 80
-  type: LoadBalancer
-```
-
----
-
-## Observability with Datadog
-#### 1.	Enable Datadog Kubernetes Monitoring
-```bash
-helm install datadog-agent datadog/datadog --set datadog.apiKey=<DATADOG_API_KEY>
-```
-
-#### 2.	View logs and metrics in Datadog UI.
-
----
-
-## Deployment Steps
-
-### Step 1: Deploy Infrastructure with Terraform
 ```bash
 cd terraform/environments/dev
 terraform init
 terraform apply -auto-approve
 ```
 
-### Step 2: Deploy Kubernetes Resources
+---
+
+### Step 3: Deploy Kubernetes Resources
+
 ```bash
 kubectl apply -f k8s/
 ```
 
-### Step 3: Run CI/CD Pipeline
-- For GitHub Actions, push a change to main.
-- For GitLab, push to the repository.
-- For Jenkins, trigger a build.
+---
+
+### Step 4: Setup CI/CD
+
+#### GitHub Actions (Example in `frontend-react/.github/workflows/deploy.yml`)
+```yaml
+on:
+  push:
+    branches: [main]
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build, Push, and Deploy
+        run: |
+          aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com
+          docker build -t t2s-frontend .
+          docker tag t2s-frontend:latest <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/t2s-frontend:latest
+          docker push <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/t2s-frontend:latest
+          kubectl apply -f k8s/frontend.yaml
+```
 
 ---
 
-## How to Verify the T2S Enrollment Application
+### Step 5: Enable Datadog Monitoring
 
-### 1. Verify Locally (Before Deployment)
-- Run the frontend (React: npm start, Angular: ng serve --open) and access:
-```plaintext
-http://localhost:3000 (React)
-http://localhost:4200 (Angular)
-```
-
-- Start the backend (node server.js) and test API at:
-```plaintext
-http://localhost:5000/api/enroll
-```
-
-### 2. Verify on AWS EKS (After Deployment)
-- Check Kubernetes pods and services:
 ```bash
+helm repo add datadog https://helm.datadoghq.com
+helm install datadog-agent datadog/datadog \
+  --set datadog.apiKey=<DATADOG_API_KEY> \
+  --set datadog.site="datadoghq.com" \
+  --set agents.containerLogs.enabled=true
+```
+
+---
+
+## Verification Checklist
+
+### Kubernetes
+```bash
+kubectl get nodes
 kubectl get pods -n t2s-enrollment
 kubectl get svc -n t2s-enrollment
 ```
 
-- Access the app via:
+### Application
 ```plaintext
 http://<LoadBalancer-EXTERNAL-IP>
-https://t2s-enroll.com (if domain configured)
+https://t2s-enroll.com  # If Route53 domain is configured
 ```
 
-### 3. Verify Observability with Datadog
-- Monitor Kubernetes metrics in Datadog Dashboard
-- Check logs:
-```bash 
-kubectl logs <pod-name> -n t2s-enrollment
-```
-
-- Validate CI/CD pipeline status (GitHub Actions, GitLab, Jenkins).
-
-### 4. Test API Endpoints
-- GET all enrollments:
+### Logs and Monitoring
 ```bash
-GET http://<LoadBalancer-EXTERNAL-IP>/api/enroll
-```
-
-	•	POST new enrollment:
-
-{
-  "firstName": "John",
-  "lastName": "Doe",
-  "email": "john@example.com",
-  "course": "DevOps"
-}
-
-
-
-5. Debug Issues (If Not Working)
-	•	Check logs:
-
 kubectl logs <pod-name> -n t2s-enrollment
+```
+> Use Datadog dashboard for live metrics, alerts, and dashboards.
 
+---
 
-	•	Validate DNS & TLS:
+## Security & Resilience
 
-nslookup t2s-enroll.com
-curl -v https://t2s-enroll.com
-
-
-
-Once verified, your application should be fully accessible in the browser via LoadBalancer IP or custom domain! 🚀
+- IAM roles for secure access to EKS
+- WAF to protect APIs and web interface
+- HPA auto-scales frontend and backend deployments
 
 ---
 
 ## Use Cases
 
-### 1. Automated Enrollment System for Training Programs
-- The web application serves as **a self-service enrollment platform** where students can register for **DevOps, Cloud, and IT training programs**.
-- The application securely stores user details and course preferences in the backend.
-
-### 2. Infrastructure as Code (IaC) for Scalable Deployments
-- By using **Terraform modules**, this project ensures **repeatable and scalable deployments**.
-- The infrastructure includes **S3 for state storage, AWS EKS for container orchestration, and ECR for Docker image management**.
-
-### 3. Continuous Deployment & CI/CD Pipelines
-- The deployment process is fully automated using **GitHub Actions, GitLab CI/CD, and Jenkins**, allowing teams to **rapidly push updates without downtime**.
-- Each pipeline **automatically builds, tests, and deploys the latest version of the application**.
-
-### 4. Cloud-Native Observability and Monitoring with Datadog
-- **Datadog Agent** is deployed in Kubernetes to monitor logs, metrics, and application health.
-- The setup provides **real-time alerts for performance bottlenecks, security incidents, and potential system failures**.
-
-### 5. High Availability and Load Balancing
-- The system uses **AWS Load Balancer** and **Kubernetes Service Mesh** to distribute traffic across multiple application instances.
-- Ensures **minimal downtime and maximum reliability** for users.
+- Secure online course enrollment system
+- Modern DevOps practice showcase with IaC + CI/CD + Monitoring
+- Training environment for DevOps and Cloud Engineers
 
 ---
 
-## Conclusion
+## Requirements
 
-This project showcases a **fully automated DevOps pipeline** that integrates **infrastructure provisioning, deployment automation, observability, and scalability** in a real-world cloud environment.
+- Terraform v1.3+
+- AWS CLI configured
+- kubectl installed
+- Datadog API Key (for monitoring)
+- Docker installed
 
-By implementing **AWS EKS, Terraform, CI/CD pipelines, Kubernetes, and Datadog monitoring**, the **T2S Enrollment Web Application** provides a **robust, high-performance, and cost-effective solution** for managing course enrollments.
+---
 
-This project is **an excellent use case for Cloud & DevOps Engineers**, providing hands-on experience in **modern cloud-native architectures, automation best practices, and infrastructure management**. Whether you’re an aspiring DevOps professional or a company looking to **enhance operational efficiency**, this architecture serves as a powerful blueprint for building and deploying **scalable web applications**. 
+## Tip
 
-This setup automates the entire workflow from infrastructure provisioning to deployment and monitoring.
+To destroy the infrastructure:
+```bash
+terraform destroy -auto-approve
+```
+
+---
+
+## Contributing
+
+Just to let you know, pull requests are welcome. Open an issue first for significant changes to discuss what you’d like to change.
+
+---
+
+## License
+
+[MIT](LICENSE)
